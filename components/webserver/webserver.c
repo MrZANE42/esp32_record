@@ -255,10 +255,22 @@ static int body_done_callback (http_parser* a){
   	for(int i=0;i<sizeof(http_handle)/sizeof(http_handle[0]);i++){
   		if(strcmp(http_handle[i].url,http_url)==0){
   			http_handle[i].handle(a,http_url,http_body);
+        free(http_url);
+        free(http_body);
+        http_url=NULL;
+        http_body=NULL;
+        http_url_length=0;
+        http_body_length=0;
   			return 0;
   		}
   	}
   	not_find();
+    free(http_url);
+    free(http_body);
+    http_url=NULL;
+    http_body=NULL;
+    http_url_length=0;
+    http_body_length=0;
   	// char *request;
   	// asprintf(&request,RES_HEAD,HTML);
   	// write(client_fd, request, strlen(request));
@@ -400,12 +412,7 @@ void webserver_task( void *pvParameters ){
 					//while(xReturned!=pdFALSE);
 					//lwip_send( lClientFd,path,strlen(path), 0 );
 				}while(lBytes > 0 && nparsed >= 0);
-				free(http_url);
-				free(http_body);
-				http_url=NULL;
-				http_body=NULL;
-				http_url_length=0;
-				http_body_length=0;		
+						
 			}
 			ESP_LOGI(TAG,"request_cnt:%d,socket:%d",request_cnt++,client_fd);
 			close( client_fd );
