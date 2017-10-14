@@ -382,12 +382,16 @@ int creat_socket_server(in_port_t in_port, in_addr_t in_addr)
 }
 
 
-
+void recv_timeout_callback( TimerHandle_t xTimer ){
+  ESP_LOGI(TAG,"timeout 2!!!!!");
+  close(client_fd);
+}
 void webserver_task( void *pvParameters ){
 	int32_t lBytes;
 	esp_err_t err;
 	ESP_LOGI(TAG,"webserver start");
 	uint32_t request_cnt=0;
+  TimerHandle_t recv_to=xTimerCreate( "recv_timout",2000,pdFALSE,(void*)0,recv_timeout_callback);
 	//init gpio
 	gpio_config_t io_conf;
     io_conf.intr_type = GPIO_PIN_INTR_DISABLE;
@@ -437,7 +441,10 @@ void webserver_task( void *pvParameters ){
 				// lwip_send( lClientFd, outbuf, strlen(outbuf), 0 );
         ESP_LOGI(TAG,"connected");
 				do{
+          //start a timer callback
+          xTimerStart(recv_to,0);
 					lBytes = recv( client_fd, recv_buf, sizeof( recv_buf ), 0 );
+          xTimerStop(recv_to,0);
           ESP_LOGI(TAG,"recv len:%d",lBytes);
 					if(lBytes==0){
 						//close( client_fd );	
@@ -445,7 +452,7 @@ void webserver_task( void *pvParameters ){
 						break;
 					}
 					if(lBytes<0){
-            ESP_LOGI(TAG,"timeout");
+            ESP_LOGI(TAG,"timeout 1");
             break;
           }	
 					 // for(int i=0;i<lBytes;i++)
