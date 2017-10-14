@@ -119,14 +119,14 @@ static void return_file(char* filename){
     	if(r>0){
     		sprintf(chunk_len,"%x\r\n",r);
     		wl=write(client_fd, chunk_len, strlen(chunk_len));
-        if(wl<0)
+        if(wl!=strlen(chunk_len))
           return;
 	    	//printf("%s",dst_buf);
 	    	wl=write(client_fd, read_buf, r);
-        if(wl<0)
+        if(wl!=r)
           return;
 	    	wl=write(client_fd, "\r\n", 2);
-        if(wl<0)
+        if(wl!=2)
           return;
     	}else
     		break;
@@ -240,7 +240,9 @@ void rest_readdir(http_parser* a,char*url,char* body){
 void rest_readwav(http_parser* a,char*url,char* body){
     char *request;
     asprintf(&request,RES_HEAD,"audio/x-wav");//json
-    write(client_fd, request, strlen(request));
+    int wl=write(client_fd, request, strlen(request));
+    if(wl!=strlen(request))
+      return;
     free(request);
     cJSON *root=NULL;
     root= cJSON_Parse(http_body);
