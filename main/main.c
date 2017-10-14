@@ -96,7 +96,7 @@ void app_main()
         ESP_LOGI(TAG, "ETHPGW:"IPSTR, IP2STR(&ip.gw));
         ESP_LOGI(TAG, "~~~~~~~~~~~");
     }
-    xTaskCreate(&audiostream_task, "audio_task", 2048, NULL, 6, NULL);
+    //xTaskCreate(&audiostream_task, "audio_task", 2048, NULL, 6, NULL);
     xTaskCreate(&mdns_task, "mdns_task", 2048, NULL, 5, NULL);
     xTaskCreate(webserver_task, "web_server_task", 8196, NULL, 5, NULL);
     vTaskDelay(2000);

@@ -18,6 +18,8 @@
 #include "webserver.h"
 #include "cJSON.h"
 #include <dirent.h>
+#include <sys/stat.h>  
+#include <unistd.h>
 
 #define TAG "webserver:"
 
@@ -111,14 +113,21 @@ static void return_file(char* filename){
   		ESP_LOGE(TAG,"not find the file");
   		return;
   	}
+    int wl;
   	while(1){
     	r=fread(read_buf,1,1024,f);
     	if(r>0){
     		sprintf(chunk_len,"%x\r\n",r);
-    		write(client_fd, chunk_len, strlen(chunk_len));
+    		wl=write(client_fd, chunk_len, strlen(chunk_len));
+        if(wl<0)
+          return;
 	    	//printf("%s",dst_buf);
-	    	write(client_fd, read_buf, r);
-	    	write(client_fd, "\r\n", 2);
+	    	wl=write(client_fd, read_buf, r);
+        if(wl<0)
+          return;
+	    	wl=write(client_fd, "\r\n", 2);
+        if(wl<0)
+          return;
     	}else
     		break;
     }
@@ -157,6 +166,18 @@ void web_index(http_parser* a,char*url,char* body){
   	free(request);
   	return_file("/sdcard/www/index.html");
 }
+unsigned long get_file_size(const char *path)  
+{  
+    unsigned long filesize = -1;  
+    FILE *fp;  
+    fp = fopen(path, "r");  
+    if(fp == NULL)  
+        return filesize;  
+    fseek(fp, 0L, SEEK_END);  
+    filesize = ftell(fp);  
+    fclose(fp);  
+    return filesize; 
+}  
 void rest_readdir(http_parser* a,char*url,char* body){
     char *request;
     asprintf(&request,RES_HEAD,"application/json");//json
@@ -168,6 +189,7 @@ void rest_readdir(http_parser* a,char*url,char* body){
     int i=0;
     struct dirent *pDirEntry = NULL; 
     DIR          *pDir      = NULL;
+    unsigned long size=0;
     pDir=opendir("/sdcard/");
     if(pDir==NULL){
         ESP_LOGE(TAG,"Opendir Failed");
@@ -181,6 +203,18 @@ void rest_readdir(http_parser* a,char*url,char* body){
             //printf("node:%d\ttype:%d\tfilename:%s\n",pDirEntry->d_ino,,pDirEntry->d_name);
             cJSON_AddStringToObject(item,"filename",pDirEntry->d_name);
             cJSON_AddNumberToObject(item,"type",pDirEntry->d_type);
+            if(pDirEntry->d_type==1){//filename
+              char *path = malloc(strlen("/sdcard/")+strlen(pDirEntry->d_name)+1); 
+              strcpy(path, "/sdcard/");
+              strcat(path,pDirEntry->d_name);
+              ESP_LOGI(TAG,"file path:%s",path);
+              size=get_file_size(path);
+              free(path);
+              cJSON_AddNumberToObject(item,"size",size);
+            }else{
+              cJSON_AddNumberToObject(item,"size",0);
+            }
+            //stat();
             if (i==0){
                 root->child = item;
             }else{
@@ -322,6 +356,9 @@ int creat_socket_server(in_port_t in_port, in_addr_t in_addr)
 	server.sin_port = in_port;
 	server.sin_addr.s_addr = in_addr;
 
+  struct timeval timeout;
+  timeout.tv_sec = 1;
+  timeout.tv_usec = 0;
 	if((socket_fd = socket(AF_INET, SOCK_STREAM, 0))<0) {
 		perror("listen socket uninit\n");
 		return -1;
@@ -398,20 +435,26 @@ void webserver_task( void *pvParameters ){
 				// strcat(outbuf,pcWelcomeMessage);
 				// strcat(outbuf,path);
 				// lwip_send( lClientFd, outbuf, strlen(outbuf), 0 );
+        ESP_LOGI(TAG,"connected");
 				do{
 					lBytes = recv( client_fd, recv_buf, sizeof( recv_buf ), 0 );
+          ESP_LOGI(TAG,"recv len:%d",lBytes);
 					if(lBytes==0){
-						close( client_fd );	
+						//close( client_fd );	
+            ESP_LOGI(TAG,"socket closed");
 						break;
 					}
-						
+					if(lBytes<0){
+            ESP_LOGI(TAG,"timeout");
+            break;
+          }	
 					 // for(int i=0;i<lBytes;i++)
 						// putchar(recv_buf[i]);
 					nparsed = http_parser_execute(&parser, &settings, recv_buf, lBytes);
 					
 					//while(xReturned!=pdFALSE);
 					//lwip_send( lClientFd,path,strlen(path), 0 );
-				}while(lBytes > 0 && nparsed >= 0);
+				}while(lBytes==sizeof( recv_buf ) && nparsed >= 0);
 						
 			}
 			ESP_LOGI(TAG,"request_cnt:%d,socket:%d",request_cnt++,client_fd);
