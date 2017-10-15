@@ -38,6 +38,8 @@ static int32_t socket_fd, client_fd;
 #define RES_HEAD "HTTP/1.1 200 OK\r\nContent-type: %s\r\nTransfer-Encoding: chunked\r\n\r\n"
 static char chunk_len[15];
 
+static int swrite(int32_t fd,char* data,uint32_t len);
+
 
 const static char not_find_page[] = "<!DOCTYPE html>"
       "<html>\n"
@@ -80,7 +82,7 @@ static int url_callback(http_parser* a, const char *at, size_t length){
     return 0;
 }
 static void chunk_end(int socket){
-	write(socket, "0\r\n\r\n", 7);
+	swrite(socket, "0\r\n\r\n", 7);
 }
 
 typedef struct
@@ -105,6 +107,13 @@ const HttpHandleTypeDef http_handle[]={
   {"/api/readdir/",rest_readdir},
   {"/api/readwav/",rest_readwav},
 };
+TimerHandle_t swrite_timeout_timer;
+static int swrite(int32_t fd,char* data,uint32_t len){
+  xTimerStart(swrite_timeout_timer,0);
+  int wl=write(fd,data,len);
+  xTimerStop(swrite_timeout_timer,0);
+  return wl;
+}
 static void return_file(char* filename){
 	uint32_t r;
 	char* read_buf=malloc(1024);
@@ -118,14 +127,14 @@ static void return_file(char* filename){
     	r=fread(read_buf,1,1024,f);
     	if(r>0){
     		sprintf(chunk_len,"%x\r\n",r);
-    		wl=write(client_fd, chunk_len, strlen(chunk_len));
+    		wl=swrite(client_fd, chunk_len, strlen(chunk_len));
         if(wl!=strlen(chunk_len))
           return;
 	    	//printf("%s",dst_buf);
-	    	wl=write(client_fd, read_buf, r);
+	    	wl=swrite(client_fd, read_buf, r);
         if(wl!=r)
           return;
-	    	wl=write(client_fd, "\r\n", 2);
+	    	wl=swrite(client_fd, "\r\n", 2);
         if(wl!=2)
           return;
     	}else
@@ -137,32 +146,32 @@ static void return_file(char* filename){
 static void not_find(){
 	char *request;
   	asprintf(&request,RES_HEAD,"text/html");//html
-  	write(client_fd, request, strlen(request));
+  	swrite(client_fd, request, strlen(request));
   	free(request);
   	sprintf(chunk_len,"%x\r\n",strlen(not_find_page));
-  	write(client_fd, chunk_len, strlen(chunk_len));
-  	write(client_fd, not_find_page, strlen(not_find_page));
-  	write(client_fd,"\r\n",2);
+  	swrite(client_fd, chunk_len, strlen(chunk_len));
+  	swrite(client_fd, not_find_page, strlen(not_find_page));
+  	swrite(client_fd,"\r\n",2);
   	chunk_end(client_fd);
 }
 void load_logo(http_parser* a,char*url,char* body){
 	char *request;
   	asprintf(&request,RES_HEAD,"image/png");//html
-  	write(client_fd, request, strlen(request));
+  	swrite(client_fd, request, strlen(request));
   	free(request);
   	return_file("/sdcard/www/static/logo.png");
 }
 void load_esp32(http_parser* a,char*url,char* body){
 	char *request;
   	asprintf(&request,RES_HEAD,"image/png");//html
-  	write(client_fd, request, strlen(request));
+  	swrite(client_fd, request, strlen(request));
   	free(request);
   	return_file("/sdcard/www/static/esp32.png");
 }
 void web_index(http_parser* a,char*url,char* body){
 	char *request;
   	asprintf(&request,RES_HEAD,"text/html");//html
-  	write(client_fd, request, strlen(request));
+  	swrite(client_fd, request, strlen(request));
   	free(request);
   	return_file("/sdcard/www/index.html");
 }
@@ -181,7 +190,7 @@ unsigned long get_file_size(const char *path)
 void rest_readdir(http_parser* a,char*url,char* body){
     char *request;
     asprintf(&request,RES_HEAD,"application/json");//json
-    write(client_fd, request, strlen(request));
+    swrite(client_fd, request, strlen(request));
     free(request);
     cJSON *root = cJSON_CreateArray();
     cJSON *prev=NULL;
@@ -229,9 +238,9 @@ void rest_readdir(http_parser* a,char*url,char* body){
     }
     char* out = cJSON_PrintUnformatted(root);
     sprintf(chunk_len,"%x\r\n",strlen(out));
-    write(client_fd, chunk_len, strlen(chunk_len));
-    write(client_fd, out, strlen(out));
-    write(client_fd,"\r\n",2);
+    swrite(client_fd, chunk_len, strlen(chunk_len));
+    swrite(client_fd, out, strlen(out));
+    swrite(client_fd,"\r\n",2);
     chunk_end(client_fd);
     //send(client,out,strlen(out),MSG_WAITALL);
     printf("handle_return: %s\n", out);
@@ -240,7 +249,7 @@ void rest_readdir(http_parser* a,char*url,char* body){
 void rest_readwav(http_parser* a,char*url,char* body){
     char *request;
     asprintf(&request,RES_HEAD,"audio/x-wav");//json
-    int wl=write(client_fd, request, strlen(request));
+    int wl=swrite(client_fd, request, strlen(request));
     if(wl!=strlen(request))
       return;
     free(request);
@@ -253,7 +262,7 @@ void rest_readwav(http_parser* a,char*url,char* body){
 void led_ctrl(http_parser* a,char*url,char* body){
 	char *request;
   	asprintf(&request,RES_HEAD,"application/json");//json
-  	write(client_fd, request, strlen(request));
+  	swrite(client_fd, request, strlen(request));
   	free(request);
   	cJSON *root=NULL;
     root= cJSON_Parse(http_body);
@@ -275,9 +284,9 @@ void led_ctrl(http_parser* a,char*url,char* body){
 	// cJSON_AddStringToObject(root,"speech",speech);
 	char* out = cJSON_PrintUnformatted(root);
 	sprintf(chunk_len,"%x\r\n",strlen(out));
-	write(client_fd, chunk_len, strlen(chunk_len));
-	write(client_fd, out, strlen(out));
-  	write(client_fd,"\r\n",2);
+	swrite(client_fd, chunk_len, strlen(chunk_len));
+	swrite(client_fd, out, strlen(out));
+  	swrite(client_fd,"\r\n",2);
   	chunk_end(client_fd);
 	//send(client,out,strlen(out),MSG_WAITALL);
 	//printf("handle_return: %s\n", out);
@@ -309,13 +318,13 @@ static int body_done_callback (http_parser* a){
     http_body_length=0;
   	// char *request;
   	// asprintf(&request,RES_HEAD,HTML);
-  	// write(client_fd, request, strlen(request));
+  	// swrite(client_fd, request, strlen(request));
    //  free(request);
    //  sprintf(chunk_len,"%x\r\n",strlen(not_find_page));
    //  //ESP_LOGI(TAG,"chunk_len:%s,length:%d",chunk_len,strlen(http_index_hml));
-   //  write(client_fd, chunk_len, strlen(chunk_len));
-   //  write(client_fd, http_index_hml, strlen(http_index_hml));
-   //  write(client_fd, "\r\n", 2);
+   //  swrite(client_fd, chunk_len, strlen(chunk_len));
+   //  swrite(client_fd, http_index_hml, strlen(http_index_hml));
+   //  swrite(client_fd, "\r\n", 2);
    //  chunk_end(client_fd);
     //close( client_fd );	
     return 0;
@@ -382,10 +391,13 @@ int creat_socket_server(in_port_t in_port, in_addr_t in_addr)
 
 	return socket_fd;
 }
-
+void swrite_timeout_callback( TimerHandle_t xTimer ){
+  ESP_LOGI(TAG,"write timeout!!!!!");
+  close(client_fd);
+}
 
 void recv_timeout_callback( TimerHandle_t xTimer ){
-  ESP_LOGI(TAG,"timeout 2!!!!!");
+  ESP_LOGI(TAG,"read timeout 2!!!!!");
   close(client_fd);
 }
 void webserver_task( void *pvParameters ){
@@ -394,6 +406,7 @@ void webserver_task( void *pvParameters ){
 	ESP_LOGI(TAG,"webserver start");
 	uint32_t request_cnt=0;
   TimerHandle_t recv_to=xTimerCreate( "recv_timout",2000,pdFALSE,(void*)0,recv_timeout_callback);
+  swrite_timeout_timer=xTimerCreate( "swrite_timout",2000,pdFALSE,(void*)0,swrite_timeout_callback);
 	//init gpio
 	gpio_config_t io_conf;
     io_conf.intr_type = GPIO_PIN_INTR_DISABLE;
