@@ -61,27 +61,7 @@ void audiostream_task( void *pvParameters ){
 	esp_err_t err;
 	ESP_LOGI(TAG,"audiostream start");
 	uint32_t request_cnt=0;
-	//init gpio
 	(void) pvParameters;
-	//init codec
-	hal_i2c_init(0,5,17);
-    hal_i2s_init(0,8000,16,2); //8k 16bit 1 channel
-    i2s_stop(0);
-    WM8978_Init();
-    WM8978_ADDA_Cfg(1,1); 
-    WM8978_Input_Cfg(1,0,0);     
-    WM8978_Output_Cfg(1,0); 
-    WM8978_MIC_Gain(35);
-    WM8978_AUX_Gain(0);
-    WM8978_LINEIN_Gain(0);
-    WM8978_SPKvol_Set(0);
-    WM8978_HPvol_Set(20,20);
-    WM8978_EQ_3D_Dir(1);
-    WM8978_EQ1_Set(0,24);
-    WM8978_EQ2_Set(0,24);
-    WM8978_EQ3_Set(0,24);
-    WM8978_EQ4_Set(0,24);
-    WM8978_EQ5_Set(0,0);
     socklen_t client_size=sizeof(client);
 	socket_fd = creat_socket_server(htons(3000),htonl(INADDR_ANY));
 	if( socket_fd >= 0 ){
