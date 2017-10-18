@@ -35,7 +35,9 @@
 #include "mdns_task.h"
 #include "audio.h"
 #include <dirent.h>
-
+#include "record.h"
+#include "appnvs.h"
+#include "esp_heap_alloc_caps.h"
 
 #define TAG "main:"
 // typedef int (*http_data_cb) (http_parser*, const char *at, size_t length);
@@ -54,6 +56,10 @@ void app_main()
     nvs_flash_init();
     tcpip_adapter_init();
     wifi_init_sta();
+
+    err=nvs_get();
+    if(err!=ESP_OK)
+        ESP_LOGE(TAG,"nvs get failed");
     //init gpio
     gpio_config_t io_conf;
     io_conf.intr_type = GPIO_PIN_INTR_DISABLE;
@@ -96,11 +102,14 @@ void app_main()
         ESP_LOGI(TAG, "ETHPGW:"IPSTR, IP2STR(&ip.gw));
         ESP_LOGI(TAG, "~~~~~~~~~~~");
     }
-    //xTaskCreate(&audiostream_task, "audio_task", 2048, NULL, 6, NULL);
+    xTaskCreate(&record_task, "record_task", 4096, NULL, 6, NULL);
     xTaskCreate(&mdns_task, "mdns_task", 2048, NULL, 5, NULL);
     xTaskCreate(webserver_task, "web_server_task", 8196, NULL, 5, NULL);
+    xTaskCreate(audiostream_task, "stream_task", 4096, NULL, 5, NULL);
     vTaskDelay(2000);
-    
+    size_t free8start=xPortGetFreeHeapSizeCaps(MALLOC_CAP_8BIT);
+    size_t free32start=xPortGetFreeHeapSizeCaps(MALLOC_CAP_32BIT);
+    ESP_LOGI(TAG,"free mem8bit: %d mem32bit: %d\n",free8start,free32start);
     
     //}while(1);
     //if(create_tcp_server(8080)!=ESP_OK){
@@ -118,7 +127,7 @@ void app_main()
     while(1){
         //gpio_set_level(GPIO_OUTPUT_IO_0, cnt%2);
         //memset(samples_data,0,1024);
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        vTaskDelay(5000 / portTICK_PERIOD_MS);
         //ESP_LOGI(TAG, "cnt:%d",cnt);
         //aplay("/sdcard/test.wav");
         //hal_i2s_read(0,samples_data,256,portMAX_DELAY);

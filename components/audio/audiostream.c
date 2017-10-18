@@ -19,6 +19,8 @@
 #include "hal_i2s.h"
 #include "audio.h"
 #include "wm8978.h"
+#include "record.h"
+#include "spiram_fifo.h"
 
 #define TAG "audiostream:"
 
@@ -55,41 +57,55 @@ static int creat_socket_server(in_port_t in_port, in_addr_t in_addr)
 
   return socket_fd;
 }
-
+static void swrite_timeout_callback( TimerHandle_t xTimer ){
+  ESP_LOGI(TAG,"write timeout!!!!!");
+  close(client_fd);
+}
 void audiostream_task( void *pvParameters ){
 	int32_t lBytes;
 	esp_err_t err;
 	ESP_LOGI(TAG,"audiostream start");
 	uint32_t request_cnt=0;
 	(void) pvParameters;
+	TimerHandle_t audiostream_tm;
+	audiostream_tm=xTimerCreate( "audiostream_tm",1000,pdFALSE,(void*)0,swrite_timeout_callback);
     socklen_t client_size=sizeof(client);
 	socket_fd = creat_socket_server(htons(3000),htonl(INADDR_ANY));
+	EventBits_t event=0;
 	if( socket_fd >= 0 ){
 		/* Obtain the address of the output buffer.  Note there is no mutual
 		exclusion on this buffer as it is assumed only one command console
 		interface will be used at any one time. */
-		char* send_buf=NULL;
-		send_buf=malloc(1024);
+		char* buf=NULL;
+		buf=malloc(1024);
 		esp_err_t nparsed = 0;
 		/* Ensure the input string starts clear. */
 		for(;;){
 			client_fd=accept(socket_fd,(struct sockaddr*)&client,&client_size);
 			if(client_fd>0L){
-				ESP_LOGI(TAG,"start record");
-				i2s_start(0);
+				ESP_LOGI(TAG,"start stream");
+			    xEventGroupClearBits(record_event_group, RECORD_EVENT);
+				xEventGroupSetBits(record_event_group, STREAM_EVENT);
+				vTaskDelay(200);
 				// strcat(outbuf,pcWelcomeMessage);
 				// strcat(outbuf,path);
 				// lwip_send( lClientFd, outbuf, strlen(outbuf), 0 );
 				do{
-					hal_i2s_read(0,send_buf,1024,portMAX_DELAY);
-					lBytes = write( client_fd, send_buf,1024);	
+					spiRamFifoRead(buf,1024);
+					// for(int i=0;i<1024/3;i++){
+					// 	memcpy(sub_buf+i*4,buf+i*12,4);
+					// }
+					xTimerStart(audiostream_tm,0);
+					lBytes = write( client_fd,buf,1024);
+					xTimerStop(audiostream_tm,0);	
 					//while(xReturned!=pdFALSE);
 					//lwip_send( lClientFd,path,strlen(path), 0 );
 				}while(lBytes > 0);	
 			}
 			ESP_LOGI(TAG,"request_cnt:%d,socket:%d",request_cnt++,client_fd);
 			close( client_fd );
-			i2s_stop(0);
+			xEventGroupClearBits(record_event_group, STREAM_EVENT);
+			//xEventGroupSetBits(record_event_group, event);
 		}
 	}
 

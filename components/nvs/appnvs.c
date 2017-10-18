@@ -74,7 +74,7 @@ void nvs_write_task(){
 	    if (err != ESP_OK) return err;
 	    // Close
 	    nvs_close(my_handle);
-	    vTaskDelay(5000 / portTICK_PERIOD_MS);
+	    vTaskDelay(10000 / portTICK_PERIOD_MS);
 	    ESP_LOGI(TAG,"write info to nvs");
 	}
 }

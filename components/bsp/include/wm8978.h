@@ -170,7 +170,8 @@ typedef struct
     int  wSampleLength; //音频数据的大小
  }WAV_HEADER;
 
- 
+void wm8978_8k();
+void wm8978_48k();
 uint8_t WM8978_Init(void); 
 void WM8978_ADDA_Cfg(uint8_t dacen,uint8_t adcen);
 void WM8978_Input_Cfg(uint8_t micen,uint8_t lineinen,uint8_t auxen);

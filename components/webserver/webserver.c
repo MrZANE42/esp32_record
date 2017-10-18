@@ -20,6 +20,7 @@
 #include <dirent.h>
 #include <sys/stat.h>  
 #include <unistd.h>
+#include "record.h"
 
 #define TAG "webserver:"
 
@@ -97,6 +98,7 @@ void load_logo(http_parser* a,char*url,char* body);
 void load_esp32(http_parser* a,char*url,char* body);
 void rest_readdir(http_parser* a,char*url,char* body);
 void rest_readwav(http_parser* a,char*url,char* body);
+void record_control(http_parser* a,char*url,char* body);
 
 static void not_find();
 const HttpHandleTypeDef http_handle[]={
@@ -106,6 +108,7 @@ const HttpHandleTypeDef http_handle[]={
 	{"/static/esp32.png",load_esp32},
   {"/api/readdir/",rest_readdir},
   {"/api/readwav/",rest_readwav},
+  {"/api/setrecord/",record_control},
 };
 TimerHandle_t swrite_timeout_timer;
 static int swrite(int32_t fd,char* data,uint32_t len){
@@ -240,6 +243,7 @@ void rest_readdir(http_parser* a,char*url,char* body){
     sprintf(chunk_len,"%x\r\n",strlen(out));
     swrite(client_fd, chunk_len, strlen(chunk_len));
     swrite(client_fd, out, strlen(out));
+    free(out);
     swrite(client_fd,"\r\n",2);
     chunk_end(client_fd);
     //send(client,out,strlen(out),MSG_WAITALL);
@@ -257,6 +261,46 @@ void rest_readwav(http_parser* a,char*url,char* body){
     root= cJSON_Parse(http_body);
     char* name=cJSON_GetObjectItem(root,"filename")->valuestring;
     return_file(name);
+    cJSON_Delete(root);
+}
+void record_control(http_parser* a,char*url,char* body){
+    int err=1;
+    char *request;
+    asprintf(&request,RES_HEAD,"application/json");//json
+    swrite(client_fd, request, strlen(request));
+    free(request);
+    cJSON *root=NULL;
+    root= cJSON_Parse(http_body);
+    uint8_t record=cJSON_GetObjectItem(root,"record")->valueint;
+    cJSON_Delete(root);
+    //start record
+    if(record){
+      EventBits_t event=xEventGroupWaitBits(record_event_group,STREAM_EVENT,pdFALSE,pdFALSE,0);
+      if((event & STREAM_EVENT ) != 0){
+        err=1;
+        //live stream is working..
+      }else{
+        xEventGroupSetBits(record_event_group, RECORD_EVENT);
+        err=0;
+      }
+    }else{
+      xEventGroupClearBits(record_event_group, RECORD_EVENT);
+    }
+    //gpio_set_level(GPIO_OUTPUT_IO_0,led);
+    root=NULL;
+    root=cJSON_CreateObject();
+    if(root==NULL){
+      ESP_LOGI(TAG,"cjson root create failed\n");
+      return NULL;
+    }
+    cJSON_AddNumberToObject(root,"err",err);
+    char* out = cJSON_PrintUnformatted(root);
+    sprintf(chunk_len,"%x\r\n",strlen(out));
+    swrite(client_fd, chunk_len, strlen(chunk_len));
+    swrite(client_fd, out, strlen(out));
+    free(out);
+    swrite(client_fd,"\r\n",2);
+    chunk_end(client_fd);
     cJSON_Delete(root);
 }
 void led_ctrl(http_parser* a,char*url,char* body){
@@ -286,8 +330,9 @@ void led_ctrl(http_parser* a,char*url,char* body){
 	sprintf(chunk_len,"%x\r\n",strlen(out));
 	swrite(client_fd, chunk_len, strlen(chunk_len));
 	swrite(client_fd, out, strlen(out));
-  	swrite(client_fd,"\r\n",2);
-  	chunk_end(client_fd);
+  free(out);
+  swrite(client_fd,"\r\n",2);
+  chunk_end(client_fd);
 	//send(client,out,strlen(out),MSG_WAITALL);
 	//printf("handle_return: %s\n", out);
 	cJSON_Delete(root);
@@ -391,12 +436,12 @@ int creat_socket_server(in_port_t in_port, in_addr_t in_addr)
 
 	return socket_fd;
 }
-void swrite_timeout_callback( TimerHandle_t xTimer ){
+static void swrite_timeout_callback( TimerHandle_t xTimer ){
   ESP_LOGI(TAG,"write timeout!!!!!");
   close(client_fd);
 }
 
-void recv_timeout_callback( TimerHandle_t xTimer ){
+static void recv_timeout_callback( TimerHandle_t xTimer ){
   ESP_LOGI(TAG,"read timeout 2!!!!!");
   close(client_fd);
 }
@@ -460,7 +505,7 @@ void webserver_task( void *pvParameters ){
           xTimerStart(recv_to,0);
 					lBytes = recv( client_fd, recv_buf, sizeof( recv_buf ), 0 );
           xTimerStop(recv_to,0);
-          ESP_LOGI(TAG,"recv len:%d",lBytes);
+          //ESP_LOGI(TAG,"recv len:%d",lBytes);
 					if(lBytes==0){
 						//close( client_fd );	
             ESP_LOGI(TAG,"socket closed");
