@@ -21,6 +21,9 @@
 #include <sys/stat.h>  
 #include <unistd.h>
 #include "record.h"
+#include "main.h"
+#include "appnvs.h"
+#include "esp_system.h"
 
 #define TAG "webserver:"
 
@@ -99,6 +102,10 @@ void load_esp32(http_parser* a,char*url,char* body);
 void rest_readdir(http_parser* a,char*url,char* body);
 void rest_readwav(http_parser* a,char*url,char* body);
 void record_control(http_parser* a,char*url,char* body);
+void rm_file(http_parser* a,char*url,char* body);
+void read_board(http_parser* a,char*url,char* body);
+void set_wifi(http_parser* a,char*url,char* body);
+
 
 static void not_find();
 const HttpHandleTypeDef http_handle[]={
@@ -109,6 +116,9 @@ const HttpHandleTypeDef http_handle[]={
   {"/api/readdir/",rest_readdir},
   {"/api/readwav/",rest_readwav},
   {"/api/setrecord/",record_control},
+  {"/api/rmfile/",rm_file,},
+  {"/api/readboard/",read_board},
+  {"/api/setwifi/",set_wifi},
 };
 TimerHandle_t swrite_timeout_timer;
 static int swrite(int32_t fd,char* data,uint32_t len){
@@ -195,50 +205,82 @@ void rest_readdir(http_parser* a,char*url,char* body){
     asprintf(&request,RES_HEAD,"application/json");//json
     swrite(client_fd, request, strlen(request));
     free(request);
-    cJSON *root = cJSON_CreateArray();
-    cJSON *prev=NULL;
-    cJSON *item=NULL;
-    int i=0;
-    struct dirent *pDirEntry = NULL; 
-    DIR          *pDir      = NULL;
-    unsigned long size=0;
-    pDir=opendir("/sdcard/");
-    if(pDir==NULL){
-        ESP_LOGE(TAG,"Opendir Failed");
-        //xEventGroupWaitBits(eth_event_group,ETH_DISCONNECTED_BIT,pdTRUE,pdTRUE,portMAX_DELAY);
-    }else{
-        do{
-            item=cJSON_CreateObject();
-            pDirEntry = readdir(pDir);
-            if(pDirEntry==NULL)
-                break;
-            //printf("node:%d\ttype:%d\tfilename:%s\n",pDirEntry->d_ino,,pDirEntry->d_name);
-            cJSON_AddStringToObject(item,"filename",pDirEntry->d_name);
-            cJSON_AddNumberToObject(item,"type",pDirEntry->d_type);
-            if(pDirEntry->d_type==1){//filename
-              char *path = malloc(strlen("/sdcard/")+strlen(pDirEntry->d_name)+1); 
-              strcpy(path, "/sdcard/");
-              strcat(path,pDirEntry->d_name);
-              ESP_LOGI(TAG,"file path:%s",path);
-              size=get_file_size(path);
-              free(path);
-              cJSON_AddNumberToObject(item,"size",size);
-            }else{
-              cJSON_AddNumberToObject(item,"size",0);
-            }
-            //stat();
-            if (i==0){
-                root->child = item;
-            }else{
-                prev->next = item;
-                item->prev = prev;
-            }
-            prev =item;
-            i++;
+    if(sd==1){
+      cJSON *root = cJSON_CreateArray();
+      cJSON *prev=NULL;
+      cJSON *item=NULL;
+      int i=0;
+      struct dirent *pDirEntry = NULL; 
+      DIR          *pDir      = NULL;
+      unsigned long size=0;
+      pDir=opendir("/sdcard/");
+      if(pDir==NULL){
+          ESP_LOGE(TAG,"Opendir Failed");
+          //xEventGroupWaitBits(eth_event_group,ETH_DISCONNECTED_BIT,pdTRUE,pdTRUE,portMAX_DELAY);
+      }else{
+          do{
+              item=cJSON_CreateObject();
+              pDirEntry = readdir(pDir);
+              if(pDirEntry==NULL)
+                  break;
+              //printf("node:%d\ttype:%d\tfilename:%s\n",pDirEntry->d_ino,,pDirEntry->d_name);
+              cJSON_AddStringToObject(item,"filename",pDirEntry->d_name);
+              cJSON_AddNumberToObject(item,"type",pDirEntry->d_type);
+              if(pDirEntry->d_type==1){//filename
+                char *path = malloc(strlen("/sdcard/")+strlen(pDirEntry->d_name)+1); 
+                strcpy(path, "/sdcard/");
+                strcat(path,pDirEntry->d_name);
+                ESP_LOGI(TAG,"file path:%s",path);
+                size=get_file_size(path);
+                free(path);
+                cJSON_AddNumberToObject(item,"size",size);
+              }else{
+                cJSON_AddNumberToObject(item,"size",0);
+              }
+              //stat();
+              if (i==0){
+                  root->child = item;
+              }else{
+                  prev->next = item;
+                  item->prev = prev;
+              }
+              prev =item;
+              i++;
 
-        }while(1);
-        closedir(pDir);
+          }while(1);
+          closedir(pDir);
+      }
+      char* out = cJSON_PrintUnformatted(root);
+      sprintf(chunk_len,"%x\r\n",strlen(out));
+      swrite(client_fd, chunk_len, strlen(chunk_len));
+      swrite(client_fd, out, strlen(out));
+      free(out);
+      swrite(client_fd,"\r\n",2);
+      chunk_end(client_fd);
+      //send(client,out,strlen(out),MSG_WAITALL);
+      printf("handle_return: %s\n", out);
+      cJSON_Delete(root);
     }
+    chunk_end(client_fd);
+}
+void read_board(http_parser* a,char*url,char* body){
+    char *request;
+    asprintf(&request,RES_HEAD,"application/json");//json
+    swrite(client_fd, request, strlen(request));
+    free(request);
+    cJSON *root=NULL;
+    root=cJSON_CreateObject();
+    if(root==NULL){
+      ESP_LOGI(TAG,"cjson root create failed\n");
+      return NULL;
+    }
+    // struct statfs diskInfo;  
+    // statfs("/home/carl/", &diskInfo);  
+    cJSON_AddNumberToObject(root,"battery",board.battery);
+    cJSON_AddNumberToObject(root,"mode",board.mode);
+    cJSON_AddNumberToObject(root,"sd_cap",board.sd_cap);
+    cJSON_AddNumberToObject(root,"stream",board.audio_s->stream);
+    cJSON_AddNumberToObject(root,"record",board.audio_s->record);
     char* out = cJSON_PrintUnformatted(root);
     sprintf(chunk_len,"%x\r\n",strlen(out));
     swrite(client_fd, chunk_len, strlen(chunk_len));
@@ -246,8 +288,75 @@ void rest_readdir(http_parser* a,char*url,char* body){
     free(out);
     swrite(client_fd,"\r\n",2);
     chunk_end(client_fd);
-    //send(client,out,strlen(out),MSG_WAITALL);
-    printf("handle_return: %s\n", out);
+    cJSON_Delete(root);
+}
+void set_wifi(http_parser* a,char*url,char* body){
+    char *request;
+    asprintf(&request,RES_HEAD,"application/json");//json
+    swrite(client_fd, request, strlen(request));
+    free(request);
+    cJSON *root=NULL;
+    root= cJSON_Parse(http_body);
+    //1:sta 0:ap
+    uint8_t mode=cJSON_GetObjectItem(root,"mode")->valueint;
+    board.mode=mode;
+    char* sta_ssid=cJSON_GetObjectItem(root,"sta_ssid")->valuestring;
+    char* sta_pw=cJSON_GetObjectItem(root,"sta_pw")->valuestring;
+    char* ap_ssid=cJSON_GetObjectItem(root,"ap_ssid")->valuestring;
+    char* ap_pw=cJSON_GetObjectItem(root,"ap_pw")->valuestring;
+    memcpy(system_info.sta_ssid,sta_ssid,strlen(sta_ssid));
+    memcpy(system_info.sta_pw,sta_pw,strlen(sta_pw));
+    memcpy(system_info.ap_ssid,ap_ssid,strlen(ap_ssid));
+    memcpy(system_info.ap_pw,ap_pw,strlen(ap_pw));
+    nvs_write();
+    cJSON_Delete(root);
+    //gpio_set_level(GPIO_OUTPUT_IO_0,led);
+    root=NULL;
+    root=cJSON_CreateObject();
+    if(root==NULL){
+      ESP_LOGI(TAG,"cjson root create failed\n");
+      return NULL;
+    }
+    cJSON_AddNumberToObject(root,"err",0);
+    char* out = cJSON_PrintUnformatted(root);
+    sprintf(chunk_len,"%x\r\n",strlen(out));
+    swrite(client_fd, chunk_len, strlen(chunk_len));
+    swrite(client_fd, out, strlen(out));
+    free(out);
+    swrite(client_fd,"\r\n",2);
+    chunk_end(client_fd);
+    cJSON_Delete(root);
+    if(system_info.mode!=mode){
+      system_info.mode=mode;
+      close(client_fd);
+      esp_restart();
+    }
+}
+void rm_file(http_parser* a,char*url,char* body){
+    char *request;
+    asprintf(&request,RES_HEAD,"application/json");//json
+    swrite(client_fd, request, strlen(request));
+    free(request);
+    cJSON *root=NULL;
+    root= cJSON_Parse(http_body);
+    char* filename=cJSON_GetObjectItem(root,"filename")->valuestring;
+    unlink(filename);
+    cJSON_Delete(root);
+    //gpio_set_level(GPIO_OUTPUT_IO_0,led);
+    root=NULL;
+    root=cJSON_CreateObject();
+    if(root==NULL){
+      ESP_LOGI(TAG,"cjson root create failed\n");
+      return NULL;
+    }
+    cJSON_AddNumberToObject(root,"err",0);
+    char* out = cJSON_PrintUnformatted(root);
+    sprintf(chunk_len,"%x\r\n",strlen(out));
+    swrite(client_fd, chunk_len, strlen(chunk_len));
+    swrite(client_fd, out, strlen(out));
+    free(out);
+    swrite(client_fd,"\r\n",2);
+    chunk_end(client_fd);
     cJSON_Delete(root);
 }
 void rest_readwav(http_parser* a,char*url,char* body){
@@ -264,7 +373,7 @@ void rest_readwav(http_parser* a,char*url,char* body){
     cJSON_Delete(root);
 }
 void record_control(http_parser* a,char*url,char* body){
-    int err=1;
+    int err=0;
     char *request;
     asprintf(&request,RES_HEAD,"application/json");//json
     swrite(client_fd, request, strlen(request));
@@ -274,18 +383,14 @@ void record_control(http_parser* a,char*url,char* body){
     uint8_t record=cJSON_GetObjectItem(root,"record")->valueint;
     cJSON_Delete(root);
     //start record
-    if(record){
-      EventBits_t event=xEventGroupWaitBits(record_event_group,STREAM_EVENT,pdFALSE,pdFALSE,0);
-      if((event & STREAM_EVENT ) != 0){
-        err=1;
-        //live stream is working..
-      }else{
+    if(sd==1){
+      if(record)
         xEventGroupSetBits(record_event_group, RECORD_EVENT);
-        err=0;
-      }
-    }else{
-      xEventGroupClearBits(record_event_group, RECORD_EVENT);
+      else
+        xEventGroupClearBits(record_event_group, RECORD_EVENT);
     }
+    else 
+      err=3;
     //gpio_set_level(GPIO_OUTPUT_IO_0,led);
     root=NULL;
     root=cJSON_CreateObject();
@@ -454,14 +559,15 @@ void webserver_task( void *pvParameters ){
   swrite_timeout_timer=xTimerCreate( "swrite_timout",2000,pdFALSE,(void*)0,swrite_timeout_callback);
 	//init gpio
 	gpio_config_t io_conf;
-    io_conf.intr_type = GPIO_PIN_INTR_DISABLE;
-    io_conf.mode = GPIO_MODE_OUTPUT;
-    io_conf.pin_bit_mask = GPIO_OUTPUT_PIN_SEL;
-    io_conf.pull_down_en = 0;
-    io_conf.pull_up_en = 0;
-    gpio_config(&io_conf);
+  io_conf.intr_type = GPIO_PIN_INTR_DISABLE;
+  io_conf.mode = GPIO_MODE_OUTPUT;
+  io_conf.pin_bit_mask = GPIO_OUTPUT_PIN_SEL;
+  io_conf.pull_down_en = 0;
+  io_conf.pull_up_en = 0;
+  gpio_config(&io_conf);
 	//init sd card
-	sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+  if(sd==1){
+	  sdmmc_host_t host = SDMMC_HOST_DEFAULT();
     sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
         .format_if_mount_failed = true,
@@ -478,12 +584,14 @@ void webserver_task( void *pvParameters ){
         return;
     }
     sdmmc_card_print_info(stdout, card);
+    board.sd_cap=((uint64_t) card->csd.capacity) * card->csd.sector_size / (1024 * 1024);
+  }
 
 	(void) pvParameters;
 	http_parser parser;
-    http_parser_init(&parser, HTTP_REQUEST);
-    parser.data = NULL;
-    socklen_t client_size=sizeof(client);
+  http_parser_init(&parser, HTTP_REQUEST);
+  parser.data = NULL;
+  socklen_t client_size=sizeof(client);
 
 	socket_fd = creat_socket_server(htons(80),htonl(INADDR_ANY));
 	if( socket_fd >= 0 ){

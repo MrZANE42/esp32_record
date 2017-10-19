@@ -16,6 +16,7 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "mdns.h"
+#include "main.h"
 
 /* The examples use simple WiFi configuration that you can set via
    'make menuconfig'.
@@ -78,7 +79,11 @@ void mdns_task(void *pvParameters)
     while(1) {
         ESP_LOGI(TAG, "start mdns");
         if (!mdns) {
-            esp_err_t err = mdns_init(TCPIP_ADAPTER_IF_STA, &mdns);
+            esp_err_t err;
+            if(board.mode==1)
+                err = mdns_init(TCPIP_ADAPTER_IF_STA, &mdns);
+            else
+                err = mdns_init(TCPIP_ADAPTER_IF_AP, &mdns);
             if (err) {
                 ESP_LOGE(TAG, "Failed starting MDNS: %u", err);
                 continue;

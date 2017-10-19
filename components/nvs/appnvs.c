@@ -47,34 +47,29 @@ esp_err_t nvs_get(){
         err = nvs_get_blob(my_handle, "run_time", run_time, &required_size);
         if (err != ESP_OK) return err;
        	memcpy(&system_info,run_time,required_size);
-       	ESP_LOGI(TAG,"system info:wifi mode:%d,ssid:%s,password:%s,old_name:%d,new_name:%d",\
-       		system_info.mode,system_info.ssid,\
-       		system_info.password,system_info.sd_first_name,system_info.sd_now_name);
         free(run_time);
     }
     // Close
     nvs_close(my_handle);
     return ESP_OK;
 }
-void nvs_write_task(){
+esp_err_t nvs_write(){
 	nvs_handle my_handle;
     esp_err_t err;
     size_t required_size;
-	while(1){
-	    // Open
-	    err = nvs_open(STORAGE_NAMESPACE, NVS_READWRITE, &my_handle);
-	    if (err != ESP_OK) return err;
+    err = nvs_open(STORAGE_NAMESPACE, NVS_READWRITE, &my_handle);
+    if (err != ESP_OK) return err;
 
-	    // Write value including previously saved blob if available
-	    required_size =sizeof(system_info);
-	    err = nvs_set_blob(my_handle, "run_time", &system_info, required_size);
-	    if (err != ESP_OK) return err;
-	    // Commit
-	    err = nvs_commit(my_handle);
-	    if (err != ESP_OK) return err;
-	    // Close
-	    nvs_close(my_handle);
-	    vTaskDelay(10000 / portTICK_PERIOD_MS);
-	    ESP_LOGI(TAG,"write info to nvs");
-	}
+    // Write value including previously saved blob if available
+    required_size =sizeof(system_info);
+    err = nvs_set_blob(my_handle, "run_time", &system_info, required_size);
+    if (err != ESP_OK) return err;
+    // Commit
+    err = nvs_commit(my_handle);
+    if (err != ESP_OK) return err;
+    // Close
+    nvs_close(my_handle);
+    //vTaskDelay(10000 / portTICK_PERIOD_MS);
+    ESP_LOGI(TAG,"write info to nvs");
+    return err;
 }

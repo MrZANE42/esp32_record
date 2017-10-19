@@ -38,6 +38,7 @@
 #include "record.h"
 #include "appnvs.h"
 #include "esp_heap_alloc_caps.h"
+#include "main.h"
 
 #define TAG "main:"
 // typedef int (*http_data_cb) (http_parser*, const char *at, size_t length);
@@ -48,16 +49,40 @@
 
 #define GPIO_OUTPUT_IO_0    16
 #define GPIO_OUTPUT_PIN_SEL  ((1<<GPIO_OUTPUT_IO_0))
-
+uint8_t sd=0;//sd=0 not plugin
+BoardTypeDef board;
 void app_main()
 {
+    sd=1;//sd_plugin
+    //system_info.mode=1;
     esp_err_t err;
     event_engine_init();
     nvs_flash_init();
     tcpip_adapter_init();
-    wifi_init_sta();
 
+    //wifi_init_sta();
+    
+    board.audio_s=&audio_state;
     err=nvs_get();
+init:
+    ESP_LOGI(TAG,"wifi mode:%d,sta_ssid:%s,sta_pw:%s,ap_ssid:%s,ap_pw:%s",system_info.mode,
+        system_info.sta_ssid,system_info.sta_pw,
+        system_info.ap_ssid,system_info.ap_pw);
+    if(system_info.mode==0){
+        if(system_info.ap_ssid[0]==0)
+            wifi_init_softap("record","1234567890");
+        else
+            wifi_init_softap(system_info.ap_ssid,system_info.ap_pw);
+    }else{
+        if(system_info.sta_ssid[0]==0){
+            system_info.mode=0;//sta isn't ok
+            goto init;
+        }else
+            wifi_init_sta(system_info.sta_ssid,system_info.sta_pw);
+    }
+    board.mode=system_info.mode;
+    board.battery=20;
+    board.sd_cap=0;
     if(err!=ESP_OK)
         ESP_LOGE(TAG,"nvs get failed");
     //init gpio
@@ -88,20 +113,26 @@ void app_main()
     // /*eth_init();
     //do{
     //gpio_set_level(GPIO_OUTPUT_IO_0, 0);
-    xEventGroupWaitBits(station_event_group,STA_GOTIP_BIT,pdTRUE,pdTRUE,portMAX_DELAY);
+    if(system_info.mode==1){
+        xEventGroupWaitBits(station_event_group,STA_GOTIP_BIT,pdTRUE,pdTRUE,portMAX_DELAY);
+        tcpip_adapter_ip_info_t ip;
+        memset(&ip, 0, sizeof(tcpip_adapter_ip_info_t));
+        if (tcpip_adapter_get_ip_info(ESP_IF_WIFI_STA, &ip) == 0) {
+            ESP_LOGI(TAG, "~~~~~~~~~~~");
+            ESP_LOGI(TAG, "ETHIP:"IPSTR, IP2STR(&ip.ip));
+            ESP_LOGI(TAG, "ETHPMASK:"IPSTR, IP2STR(&ip.netmask));
+            ESP_LOGI(TAG, "ETHPGW:"IPSTR, IP2STR(&ip.gw));
+            ESP_LOGI(TAG, "~~~~~~~~~~~");
+        }
+    }else{
+        vTaskDelay(1000);
+    }
+
     //ESP_LOGI(TAG,"got ip address");
     //xEventGroupWaitBits(eth_event_group,ETH_GOTIP_BIT,pdTRUE,pdTRUE,portMAX_DELAY);
     //esp_err_t tcpip_adapter_get_ip_printf(tcpip_adapter_if_t tcpip_if, tcpip_adapter_ip_printf_t *ip_printf);
     //gpio_set_level(GPIO_OUTPUT_IO_0, 1);
-    tcpip_adapter_ip_info_t ip;
-    memset(&ip, 0, sizeof(tcpip_adapter_ip_info_t));
-    if (tcpip_adapter_get_ip_info(ESP_IF_WIFI_STA, &ip) == 0) {
-        ESP_LOGI(TAG, "~~~~~~~~~~~");
-        ESP_LOGI(TAG, "ETHIP:"IPSTR, IP2STR(&ip.ip));
-        ESP_LOGI(TAG, "ETHPMASK:"IPSTR, IP2STR(&ip.netmask));
-        ESP_LOGI(TAG, "ETHPGW:"IPSTR, IP2STR(&ip.gw));
-        ESP_LOGI(TAG, "~~~~~~~~~~~");
-    }
+    
     xTaskCreate(&record_task, "record_task", 4096, NULL, 6, NULL);
     xTaskCreate(&mdns_task, "mdns_task", 2048, NULL, 5, NULL);
     xTaskCreate(webserver_task, "web_server_task", 8196, NULL, 5, NULL);

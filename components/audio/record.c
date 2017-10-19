@@ -23,8 +23,14 @@
 #include <stdio.h>
 #include "appnvs.h"
 #include "record.h"
-
+#include "appnvs.h"
+#include "main.h"
 EventGroupHandle_t record_event_group;
+
+//48000/8000=6
+#define STREAM_8K 6
+//48000/16000=3
+#define STREAM_16K 3
 
 #define TAG "record_task"
 
@@ -86,6 +92,8 @@ void record_task(){
 	char name_index[10];
 	FILE *f=NULL;
 	EventBits_t event;
+	char* sub_buf=malloc(342);
+	memset(sub_buf,0,342);
 	//init queue
 	record_event_group=xEventGroupCreate();
 	//init codec
@@ -105,64 +113,67 @@ void record_task(){
     WM8978_EQ3_Set(0,24);
     WM8978_EQ4_Set(0,24);
     WM8978_EQ5_Set(0,0);
-    spiRamFifoInit();
-    //hal_i2s_init(0,48000,16,2);
+    //spiRamFifoInit();
+    wm8978_48k();
+    hal_i2s_init(0,48000,16,2);
+    i2s_stop(0);
+    i2s_on_off=0;
     while(1){
     	//not record
     	event=xEventGroupWaitBits(record_event_group,RECORD_EVENT|STREAM_EVENT,pdFALSE,pdFALSE,2000);
     	if( ( event & ( RECORD_EVENT | STREAM_EVENT ) ) == ( RECORD_EVENT | STREAM_EVENT ) )
 		{
 		    /* xEventGroupWaitBits() returned because both bits were set. */
-		    ESP_LOGE(TAG,"both mode is not working");
-		 //    if(record==0){
-			// 	record=1;
-			// 	if(i2s_on_off==0){
-		 //    		i2s_start(0);
-		 //    		i2s_on_off=1;
-		 //    	}
-			// 	ESP_LOGI(TAG,"start record");
-			// }
-			// if(stream==0){
-			// 	ESP_LOGI(TAG,"start stream");
-			// 	if(i2s_on_off==0){
-		 //    		i2s_start(0);
-		 //    		i2s_on_off=1;
-		 //    	}
-			// 	stream=1;
-			// }
-		    // if(record==0&&stream==0){
-		    // 	if(i2s_on_off==0){
-		    // 		i2s_start(0);
-		    // 		i2s_on_off=1;
-		    // 	}
-		    // 	ESP_LOGI(TAG,"start record and stream!");
-		    // 	spiRamFifoReset();
-		    // 	ESP_LOGI(TAG,"init fifo,freespace:%d",spiRamFifoFree());
-		    // 	record=1;
-		    // 	stream=1;
-		    // }
-		    //hal_i2s_read(0,i2s_buf,1024,portMAX_DELAY);
-		}else if( ( event & RECORD_EVENT ) != 0 ){
-			i2s_on_off=1;
+		    //ESP_LOGE(TAG,"both mode is not working");
+		    if(audio_state.record==0){
+				audio_state.record=1;
+				if(i2s_on_off==0){
+		    		i2s_start(0);
+		    		i2s_on_off=1;
+		    	}
+				ESP_LOGI(TAG,"both start record");
+			}
+			if(audio_state.stream==0){
+				ESP_LOGI(TAG,"both start stream");
+				if(i2s_on_off==0){
+		    		i2s_start(0);
+		    		i2s_on_off=1;
+		    	}
+				audio_state.stream=1;
+				spiRamFifoInit();
+			}
+		    if(audio_state.record==0&&audio_state.stream==0){
+		    	if(i2s_on_off==0){
+		    		i2s_start(0);
+		    		i2s_on_off=1;
+		    	}
+		    	ESP_LOGI(TAG,"start record and stream!");
+		    	spiRamFifoInit();
+		    	ESP_LOGI(TAG,"init fifo,freespace:%d",spiRamFifoFree());
+		    	audio_state.record=1;
+		    	audio_state.stream=1;
+		    }
+		}else if( ( event & RECORD_EVENT ) != 0 ){ /* record event*/
+			if(i2s_on_off==0){
+				i2s_start(0);
+				i2s_on_off=1;
+			}
 			if(audio_state.stream==1){
 				audio_state.stream=0;
 				spiRamFifoReset();
-				i2s_stop(0);
-				i2s_driver_uninstall(0);
 				ESP_LOGI(TAG,"rest fifo,stop stream");
 			}
 			if(audio_state.record==0){
 				audio_state.record=1;
-				wm8978_48k();
-		    	hal_i2s_init(0,48000,16,2);	
-				ESP_LOGI(TAG,"start record");
+				ESP_LOGI(TAG,"only start record");
 			}
 		}else if( ( event & STREAM_EVENT ) != 0){
-			i2s_on_off=1;
+			if(i2s_on_off==0){
+				i2s_start(0);
+				i2s_on_off=1;
+			}
 			if(audio_state.record==1){
 				audio_state.record=0;
-				i2s_stop(0);
-				i2s_driver_uninstall(0);
 				ESP_LOGI(TAG,"stop record,compelete the file");
 				err=end_wav_file(f,sd_wl);
 				f=NULL;
@@ -172,9 +183,12 @@ void record_task(){
 			}
 			if(audio_state.stream==0){
 				audio_state.stream=1;
-				ESP_LOGI(TAG,"start stream");
-				wm8978_8k();
-		    	hal_i2s_init(0,8000,16,2);				
+				ESP_LOGI(TAG,"only start stream");
+				//spiRamFifoReset();
+				spiRamFifoInit();
+		    	ESP_LOGI(TAG,"init fifo,freespace:%d",spiRamFifoFree());
+				//wm8978_8k();
+		    	//hal_i2s_init(0,8000,16,2);			
 			}
 		}else{
 			ESP_LOGI(TAG,"both record and stream are stop");
@@ -195,7 +209,6 @@ void record_task(){
 			if(i2s_on_off==1){
 				i2s_on_off=0;
 				i2s_stop(0);
-				i2s_driver_uninstall(0);
 			}
 		}
 
@@ -216,6 +229,7 @@ void record_task(){
 				ESP_LOGI(TAG,"start write wav file:%s",file_name);
 				free(file_name);
 				system_info.sd_now_name++;
+				nvs_write();
 				start_wav_file(f);
 			}
 			sd_wl+=fwrite(data,1,1024,f);
@@ -230,8 +244,11 @@ void record_task(){
 			}
 		}
 		if(audio_state.stream==1){
+			for(int i=0;i<(1024/(STREAM_8K*4));i++){
+				memcpy(sub_buf+i*4,data+i*4*STREAM_8K,4);
+			}
 			//if(spiRamFifoFree()>1024)
-			spiRamFifoWrite(data,1024);
+			spiRamFifoWrite(sub_buf,(1024/(STREAM_8K*4))*4);
 		}
 
     }
