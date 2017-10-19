@@ -58,8 +58,9 @@ static int creat_socket_server(in_port_t in_port, in_addr_t in_addr)
   return socket_fd;
 }
 static void swrite_timeout_callback( TimerHandle_t xTimer ){
-  ESP_LOGI(TAG,"write timeout!!!!!");
-  close(client_fd);
+	xEventGroupClearBits(record_event_group, STREAM_EVENT);
+  	ESP_LOGI(TAG,"write timeout!!!!!");
+  	close(client_fd);
 }
 //uint8_t sub_buf[350];
 void audiostream_task( void *pvParameters ){
@@ -69,7 +70,7 @@ void audiostream_task( void *pvParameters ){
 	uint32_t request_cnt=0;
 	(void) pvParameters;
 	TimerHandle_t audiostream_tm;
-	audiostream_tm=xTimerCreate( "audiostream_tm",5000,pdFALSE,(void*)0,swrite_timeout_callback);
+	audiostream_tm=xTimerCreate( "audiostream_tm",1000,pdFALSE,(void*)0,swrite_timeout_callback);
     socklen_t client_size=sizeof(client);
 	socket_fd = creat_socket_server(htons(3000),htonl(INADDR_ANY));
 	EventBits_t event=0;
@@ -82,12 +83,13 @@ void audiostream_task( void *pvParameters ){
 		esp_err_t nparsed = 0;
 		/* Ensure the input string starts clear. */
 		for(;;){
+			xEventGroupClearBits(record_event_group, STREAM_EVENT);
 			client_fd=accept(socket_fd,(struct sockaddr*)&client,&client_size);
 			if(client_fd>0L){
 				ESP_LOGI(TAG,"start stream");
 			    //xEventGroupClearBits(record_event_group, RECORD_EVENT);
+				//vTaskDelay(1000);
 				xEventGroupSetBits(record_event_group, STREAM_EVENT);
-				vTaskDelay(200);
 				// strcat(outbuf,pcWelcomeMessage);
 				// strcat(outbuf,path);
 				// lwip_send( lClientFd, outbuf, strlen(outbuf), 0 );
@@ -104,8 +106,11 @@ void audiostream_task( void *pvParameters ){
 				}while(lBytes > 0);	
 			}
 			ESP_LOGI(TAG,"request_cnt:%d,socket:%d",request_cnt++,client_fd);
-			close( client_fd );
 			xEventGroupClearBits(record_event_group, STREAM_EVENT);
+			close( client_fd );
+			vTaskDelay(1000);
+			
+			
 			//xEventGroupSetBits(record_event_group, event);
 		}
 	}

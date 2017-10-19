@@ -120,7 +120,7 @@ void record_task(){
     i2s_on_off=0;
     while(1){
     	//not record
-    	event=xEventGroupWaitBits(record_event_group,RECORD_EVENT|STREAM_EVENT,pdFALSE,pdFALSE,2000);
+    	event=xEventGroupWaitBits(record_event_group,RECORD_EVENT|STREAM_EVENT,pdFALSE,pdFALSE,1000);
     	if( ( event & ( RECORD_EVENT | STREAM_EVENT ) ) == ( RECORD_EVENT | STREAM_EVENT ) )
 		{
 		    /* xEventGroupWaitBits() returned because both bits were set. */
