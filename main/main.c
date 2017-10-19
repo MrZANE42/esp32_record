@@ -53,7 +53,7 @@ uint8_t sd=0;//sd=0 not plugin
 BoardTypeDef board;
 void app_main()
 {
-    sd=0;//sd_plugin
+    sd=1;//sd_plugin
     //system_info.mode=1;
     esp_err_t err;
     event_engine_init();
@@ -68,7 +68,7 @@ init:
     ESP_LOGI(TAG,"wifi mode:%d,sta_ssid:%s,sta_pw:%s,ap_ssid:%s,ap_pw:%s",system_info.mode,
         system_info.sta_ssid,system_info.sta_pw,
         system_info.ap_ssid,system_info.ap_pw);
-    system_info.mode=1;
+    //system_info.mode=1;
     if(system_info.mode==0){
         if(system_info.ap_ssid[0]==0)
             wifi_init_softap("record","1234567890");

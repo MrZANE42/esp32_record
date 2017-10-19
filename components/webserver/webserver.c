@@ -120,7 +120,7 @@ const HttpHandleTypeDef http_handle[]={
   {"/api/readboard/",read_board},
   {"/api/setwifi/",set_wifi},
 };
-TimerHandle_t swrite_timeout_timer;
+static TimerHandle_t swrite_timeout_timer;
 static int swrite(int32_t fd,char* data,uint32_t len){
   xTimerStart(swrite_timeout_timer,0);
   int wl=write(fd,data,len);
