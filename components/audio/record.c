@@ -191,7 +191,7 @@ void record_task(){
 		    	//hal_i2s_init(0,8000,16,2);			
 			}
 		}else{
-			ESP_LOGI(TAG,"both record and stream are stop");
+			//ESP_LOGI(TAG,"both record and stream are stop");
 			if(audio_state.record==1){
 				audio_state.record=0;
 				ESP_LOGI(TAG,"stop record,compelete the file");

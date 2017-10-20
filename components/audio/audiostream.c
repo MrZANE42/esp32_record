@@ -57,7 +57,7 @@ static int creat_socket_server(in_port_t in_port, in_addr_t in_addr)
 
   return socket_fd;
 }
-static void swrite_timeout_callback( TimerHandle_t xTimer ){
+static void audio_swrite_timeout_callback( TimerHandle_t xTimer ){
 	xEventGroupClearBits(record_event_group, STREAM_EVENT);
   	ESP_LOGI(TAG,"write timeout!!!!!");
   	close(client_fd);
@@ -70,7 +70,7 @@ void audiostream_task( void *pvParameters ){
 	uint32_t request_cnt=0;
 	(void) pvParameters;
 	TimerHandle_t audiostream_tm;
-	audiostream_tm=xTimerCreate( "audiostream_tm",1000,pdFALSE,(void*)0,swrite_timeout_callback);
+	audiostream_tm=xTimerCreate( "audiostream_tm",1000,pdFALSE,(void*)0,audio_swrite_timeout_callback);
     socklen_t client_size=sizeof(client);
 	socket_fd = creat_socket_server(htons(3000),htonl(INADDR_ANY));
 	EventBits_t event=0;
