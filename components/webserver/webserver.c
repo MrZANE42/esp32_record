@@ -260,8 +260,8 @@ void rest_readdir(http_parser* a,char*url,char* body){
       //send(client,out,strlen(out),MSG_WAITALL);
       printf("handle_return: %s\n", out);
       cJSON_Delete(root);
-    }
-    chunk_end(client_fd);
+    }else
+      chunk_end(client_fd);
 }
 void read_board(http_parser* a,char*url,char* body){
     char *request;
