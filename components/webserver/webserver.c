@@ -328,6 +328,7 @@ void set_wifi(http_parser* a,char*url,char* body){
     cJSON_Delete(root);
     if(system_info.mode!=mode){
       system_info.mode=mode;
+      nvs_write();
       close(client_fd);
       esp_restart();
     }
