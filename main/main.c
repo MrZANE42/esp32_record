@@ -37,7 +37,7 @@
 #include <dirent.h>
 #include "record.h"
 #include "appnvs.h"
-#include "esp_heap_alloc_caps.h"
+#include "esp_heap_caps.h"
 #include "main.h"
 
 #define TAG "main:"
@@ -47,23 +47,85 @@
 
 //char* http_body;
 
-#define GPIO_OUTPUT_IO_0    16
-#define GPIO_OUTPUT_PIN_SEL  ((1<<GPIO_OUTPUT_IO_0))
+#define LED1    18
+#define LED2    19
+#define GPIO_OUTPUT_PIN_SEL  ((1<<LED1) | (1<<LED2))
+#define SD_CD     16
+#define KEY     23
+#define GPIO_INPUT_PIN_SEL  ((1<<SD_CD) | (1<<KEY))
+#define ESP_INTR_FLAG_DEFAULT 0
+
+static xQueueHandle gpio_evt_queue = NULL;
+
+static void IRAM_ATTR gpio_isr_handler(void* arg)
+{
+    uint32_t gpio_num = (uint32_t) arg;
+    xQueueSendFromISR(gpio_evt_queue, &gpio_num, NULL);
+}
+static void gpio_task(void* arg)
+{
+    uint32_t io_num;
+    for(;;) {
+        if(xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY)) {
+            printf("GPIO[%d] intr, val: %d\n", io_num, gpio_get_level(io_num));
+        }
+    }
+}
+
+
 uint8_t sd=0;//sd=0 not plugin
 BoardTypeDef board;
 void app_main()
 {
-    sd=1;//sd_plugin
-    //system_info.mode=1;
     esp_err_t err;
     event_engine_init();
     nvs_flash_init();
     tcpip_adapter_init();
-
-    //wifi_init_sta();
-    
+    //init gpio
+    gpio_evt_queue = xQueueCreate(10, sizeof(uint32_t));
+    gpio_config_t io_conf;
+    io_conf.intr_type = GPIO_PIN_INTR_DISABLE;
+    io_conf.mode = GPIO_MODE_OUTPUT;
+    io_conf.pin_bit_mask = GPIO_OUTPUT_PIN_SEL;
+    io_conf.pull_down_en = 0;
+    io_conf.pull_up_en = 0;
+    gpio_config(&io_conf);
+    io_conf.intr_type = GPIO_PIN_INTR_ANYEDGE;
+    io_conf.pin_bit_mask = GPIO_INPUT_PIN_SEL;   
+    io_conf.mode = GPIO_MODE_INPUT;
+    io_conf.pull_up_en = 1;
+    gpio_config(&io_conf);
+    xTaskCreate(gpio_task, "gpio_task", 2048, NULL, 10, NULL);
+    gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
+    gpio_isr_handler_add(SD_CD, gpio_isr_handler, (void*) SD_CD);
+    gpio_isr_handler_add(KEY, gpio_isr_handler, (void*) KEY);    
     board.audio_s=&audio_state;
     err=nvs_get();
+    //key check
+    if(gpio_get_level(KEY)==0){
+        vTaskDelay(5000);
+        if(gpio_get_level(KEY)==0){
+            //reset device
+            gpio_set_level(LED1, 1);
+            gpio_set_level(LED2, 1);
+            memset(&system_info,0,sizeof(system_info));
+            nvs_write();
+            vTaskDelay(2000);
+            gpio_set_level(LED1, 0);
+            gpio_set_level(LED2, 0);
+            vTaskDelay(1000);
+            gpio_set_level(LED1, 1);
+            gpio_set_level(LED2, 1);
+            vTaskDelay(200);
+            esp_restart();
+        }
+    }
+    //sd check
+    if(gpio_get_level(SD_CD))
+        sd=0;
+    else
+        sd=1;
+#if 0
 init:
     ESP_LOGI(TAG,"wifi mode:%d,sta_ssid:%s,sta_pw:%s,ap_ssid:%s,ap_pw:%s",system_info.mode,
         system_info.sta_ssid,system_info.sta_pw,
@@ -81,39 +143,39 @@ init:
         }else
             wifi_init_sta(system_info.sta_ssid,system_info.sta_pw);
     }
+#else
+    wifi_init_sta("Transee21_TP1","02197545");
+    system_info.mode=1;
+#endif
     board.mode=system_info.mode;
     board.battery=20;
     board.sd_cap=0;
     if(err!=ESP_OK)
         ESP_LOGE(TAG,"nvs get failed");
-    //init gpio
-    gpio_config_t io_conf;
-    io_conf.intr_type = GPIO_PIN_INTR_DISABLE;
-    io_conf.mode = GPIO_MODE_OUTPUT;
-    io_conf.pin_bit_mask = GPIO_OUTPUT_PIN_SEL;
-    io_conf.pull_down_en = 0;
-    io_conf.pull_up_en = 0;
-    gpio_config(&io_conf);
-    // sdmmc_host_t host = SDMMC_HOST_DEFAULT();
-    // sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
-    // esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-    //     .format_if_mount_failed = true,
-    //     .max_files = 5
-    // };
-    // sdmmc_card_t* card;
-    // err = esp_vfs_fat_sdmmc_mount("/sdcard", &host, &slot_config, &mount_config, &card);
-    // if (err != ESP_OK) {
-    //     if (err == ESP_FAIL) {
-    //         printf("Failed to mount filesystem. If you want the card to be formatted, set format_if_mount_failed = true.");
-    //     } else {
-    //         printf("Failed to initialize the card (%d). Make sure SD card lines have pull-up resistors in place.", err);
-    //     }
-    //     return;
-    // }
-    // sdmmc_card_print_info(stdout, card);
-    // /*eth_init();
-    //do{
-    //gpio_set_level(GPIO_OUTPUT_IO_0, 0);
+    
+    //init sd card
+    if(sd==1){
+        sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+        sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
+        esp_vfs_fat_sdmmc_mount_config_t mount_config = {
+            .format_if_mount_failed = true,
+            .max_files = 10
+        };
+        sdmmc_card_t* card;
+        err = esp_vfs_fat_sdmmc_mount("/sdcard", &host, &slot_config, &mount_config, &card);
+        if (err != ESP_OK) {
+            if (err == ESP_FAIL) {
+                printf("Failed to mount filesystem. If you want the card to be formatted, set format_if_mount_failed = true.");
+            } else {
+                printf("Failed to initialize the card (%d). Make sure SD card lines have pull-up resistors in place.", err);
+            }
+            return;
+        }
+        sdmmc_card_print_info(stdout, card);
+        board.sd_cap=((uint64_t) card->csd.capacity) * card->csd.sector_size / (1024 * 1024);
+    }else{
+        board.sd_cap=0;
+    }
     if(system_info.mode==1){
         xEventGroupWaitBits(station_event_group,STA_GOTIP_BIT,pdTRUE,pdTRUE,portMAX_DELAY);
         tcpip_adapter_ip_info_t ip;
@@ -139,8 +201,8 @@ init:
     xTaskCreate(webserver_task, "web_server_task", 8196, NULL, 5, NULL);
     xTaskCreate(audiostream_task, "stream_task", 4096, NULL, 5, NULL);
     vTaskDelay(2000);
-    size_t free8start=xPortGetFreeHeapSizeCaps(MALLOC_CAP_8BIT);
-    size_t free32start=xPortGetFreeHeapSizeCaps(MALLOC_CAP_32BIT);
+    size_t free8start=heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    size_t free32start=heap_caps_get_free_size(MALLOC_CAP_32BIT);
     ESP_LOGI(TAG,"free mem8bit: %d mem32bit: %d\n",free8start,free32start);
     
     //}while(1);
@@ -156,6 +218,7 @@ init:
     //memset(samples_data,0,1024);
     //http_client_get("http://vop.baidu.com/server_api",&settings_null,NULL);
     uint8_t cnt=0;
+    vTaskSuspend(NULL);
     while(1){
         //gpio_set_level(GPIO_OUTPUT_IO_0, cnt%2);
         //memset(samples_data,0,1024);

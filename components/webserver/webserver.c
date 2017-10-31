@@ -304,6 +304,11 @@ void set_wifi(http_parser* a,char*url,char* body){
     char* sta_pw=cJSON_GetObjectItem(root,"sta_pw")->valuestring;
     char* ap_ssid=cJSON_GetObjectItem(root,"ap_ssid")->valuestring;
     char* ap_pw=cJSON_GetObjectItem(root,"ap_pw")->valuestring;
+    memset(system_info.sta_ssid,0,32);
+    memset(system_info.ap_ssid,0,32);
+    memset(system_info.sta_pw,0,64);
+    memset(system_info.ap_pw,0,64);
+
     memcpy(system_info.sta_ssid,sta_ssid,strlen(sta_ssid));
     memcpy(system_info.sta_pw,sta_pw,strlen(sta_pw));
     memcpy(system_info.ap_ssid,ap_ssid,strlen(ap_ssid));
@@ -518,9 +523,9 @@ int creat_socket_server(in_port_t in_port, in_addr_t in_addr)
 	server.sin_port = in_port;
 	server.sin_addr.s_addr = in_addr;
 
-  struct timeval timeout;
-  timeout.tv_sec = 1;
-  timeout.tv_usec = 0;
+  //struct timeval timeout;
+  // timeout.tv_sec = 1;
+  // timeout.tv_usec = 0;
 	if((socket_fd = socket(AF_INET, SOCK_STREAM, 0))<0) {
 		perror("listen socket uninit\n");
 		return -1;
@@ -566,27 +571,7 @@ void webserver_task( void *pvParameters ){
   io_conf.pull_down_en = 0;
   io_conf.pull_up_en = 0;
   gpio_config(&io_conf);
-	//init sd card
-  if(sd==1){
-	  sdmmc_host_t host = SDMMC_HOST_DEFAULT();
-    sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
-    esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-        .format_if_mount_failed = true,
-        .max_files = 10
-    };
-    sdmmc_card_t* card;
-    err = esp_vfs_fat_sdmmc_mount("/sdcard", &host, &slot_config, &mount_config, &card);
-    if (err != ESP_OK) {
-        if (err == ESP_FAIL) {
-            printf("Failed to mount filesystem. If you want the card to be formatted, set format_if_mount_failed = true.");
-        } else {
-            printf("Failed to initialize the card (%d). Make sure SD card lines have pull-up resistors in place.", err);
-        }
-        return;
-    }
-    sdmmc_card_print_info(stdout, card);
-    board.sd_cap=((uint64_t) card->csd.capacity) * card->csd.sector_size / (1024 * 1024);
-  }
+	
 
 	(void) pvParameters;
 	http_parser parser;

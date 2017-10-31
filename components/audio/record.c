@@ -88,7 +88,8 @@ void record_task(){
 	uint8_t i2s_on_off=0;
 	uint32_t sd_wl=0;
 	char* file_name;
-	char* data=NULL;
+	int16_t* data=NULL;
+	int32_t* data1=NULL;
 	char name_index[10];
 	FILE *f=NULL;
 	EventBits_t event;
@@ -97,25 +98,25 @@ void record_task(){
 	//init queue
 	record_event_group=xEventGroupCreate();
 	//init codec
-	hal_i2c_init(0,5,17);
-    WM8978_Init();
-    WM8978_ADDA_Cfg(1,1); 
-    WM8978_Input_Cfg(1,0,0);     
-    WM8978_Output_Cfg(1,0); 
-    WM8978_MIC_Gain(35);
-    WM8978_AUX_Gain(0);
-    WM8978_LINEIN_Gain(0);
-    WM8978_SPKvol_Set(0);
-    WM8978_HPvol_Set(20,20);
-    WM8978_EQ_3D_Dir(1);
-    WM8978_EQ1_Set(0,24);
-    WM8978_EQ2_Set(0,24);
-    WM8978_EQ3_Set(0,24);
-    WM8978_EQ4_Set(0,24);
-    WM8978_EQ5_Set(0,0);
-    //spiRamFifoInit();
-    wm8978_48k();
-    hal_i2s_init(0,48000,16,2);
+	//hal_i2c_init(0,5,17);
+    // WM8978_Init();
+    // WM8978_ADDA_Cfg(1,1); 
+    // WM8978_Input_Cfg(1,0,0);     
+    // WM8978_Output_Cfg(1,0); 
+    // WM8978_MIC_Gain(35);
+    // WM8978_AUX_Gain(0);
+    // WM8978_LINEIN_Gain(0);
+    // WM8978_SPKvol_Set(0);
+    // WM8978_HPvol_Set(20,20);
+    // WM8978_EQ_3D_Dir(1);
+    // WM8978_EQ1_Set(0,24);
+    // WM8978_EQ2_Set(0,24);
+    // WM8978_EQ3_Set(0,24);
+    // WM8978_EQ4_Set(0,24);
+    // WM8978_EQ5_Set(0,0);
+    // //spiRamFifoInit();
+    // wm8978_48k();
+    hal_i2s_init(0,48000,32,2);
     i2s_stop(0);
     i2s_on_off=0;
     while(1){
@@ -214,9 +215,18 @@ void record_task(){
 
 		//work flow
 		if(audio_state.record==1||audio_state.stream==1){
+			if(data1==NULL)
+				data1=malloc(2048);
 			if(data==NULL)
 				data=malloc(1024);
-			hal_i2s_read(0,data,1024,portMAX_DELAY);
+
+			// for(int i=0;i<1024;i++){
+			// 	ESP_LOGI(TAG,"data:%x",data1[i]);
+			// }
+			hal_i2s_read(0,(char*)data1,2048,portMAX_DELAY);
+			for(int i=0;i<512;i++){
+				data[i]=(int16_t)(data1[i]>>16);
+			}
 		}
 		if(audio_state.record==1){
 			if(f==NULL&&sd_wl==0){
@@ -245,10 +255,11 @@ void record_task(){
 		}
 		if(audio_state.stream==1){
 			for(int i=0;i<(1024/(STREAM_8K*4));i++){
-				memcpy(sub_buf+i*4,data+i*4*STREAM_8K,4);
+				memcpy(sub_buf+i*4,(char*)data+i*4*STREAM_8K,4);
 			}
-			//if(spiRamFifoFree()>1024)
+			// //if(spiRamFifoFree()>1024)
 			spiRamFifoWrite(sub_buf,(1024/(STREAM_8K*4))*4);
+			//spiRamFifoWrite((char*)data,1024);
 		}
 
     }

@@ -95,6 +95,9 @@ void audiostream_task( void *pvParameters ){
 				// lwip_send( lClientFd, outbuf, strlen(outbuf), 0 );
 				do{
 					spiRamFifoRead(buf,1024);
+					// for(int i=0;i<1024;i++){
+					// 	ESP_LOGI(TAG,"buf:%x",buf[i]);
+					// }
 					// for(int i=0;i<85;i++){
 					// 	memcpy(sub_buf+i*4,buf+i*12,4);
 					// }

@@ -14,7 +14,7 @@ void hal_i2s_init(uint8_t i2s_num,uint32_t rate,uint8_t bits,uint8_t ch)
 		chanel=I2S_CHANNEL_FMT_ONLY_LEFT;
 
 	i2s_config_t i2s_config = {
-        .mode = I2S_MODE_SLAVE | I2S_MODE_TX|I2S_MODE_RX,                    
+        .mode = I2S_MODE_MASTER|I2S_MODE_RX,                    
         .sample_rate = rate,
         .bits_per_sample = bits,                                              
         .channel_format = chanel,                           //2-channels
@@ -24,10 +24,10 @@ void hal_i2s_init(uint8_t i2s_num,uint32_t rate,uint8_t bits,uint8_t ch)
         .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1                                //Interrupt level 1
     };
     i2s_pin_config_t pin_config = {
-        .bck_io_num = 34,
-        .ws_io_num = 35,
-        .data_out_num = 32,
-        .data_in_num = 33                                                       //Not used
+        .bck_io_num = 33,
+        .ws_io_num = 25,
+        .data_out_num = -1,
+        .data_in_num = 27                                                       //Not used
     };
     i2s_driver_install(i2s_num, &i2s_config, 0, NULL);
     i2s_set_pin(i2s_num, &pin_config);
